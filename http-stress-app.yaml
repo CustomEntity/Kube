@@ -23,7 +23,7 @@ data:
     
     class StressHandler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
-            if self.path == '/stress':
+            if self.path.endswith('/stress'):
                 # Répondre immédiatement
                 self.send_response(200)
                 self.send_header('Content-type', 'text/plain')
@@ -44,7 +44,7 @@ data:
     httpd = socketserver.TCPServer(('', port), StressHandler)
     print('Serveur démarré sur le port', port)
     httpd.serve_forever()
----
+--- 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -109,3 +109,21 @@ spec:
       target:
         type: Utilization
         averageUtilization: 70
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: http-stress-ingress
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /stress-app
+            pathType: Prefix
+            backend:
+              service:
+                name: http-stress
+                port:
+                  number: 80
