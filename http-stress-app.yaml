@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stress-script
+data:
+  server.py: |
+    import http.server
+    import socketserver
+    import time
+    import threading
+    
+    def stress_cpu(duration=60):
+        print('Démarrage du stress CPU pour', duration, 'secondes')
+        end_time = time.time() + duration
+        
+        # Boucle qui consomme du CPU pendant la durée spécifiée
+        while time.time() < end_time:
+            # Calcul intensif
+            for i in range(1000000):
+                num = i * i * i
+                
+        print('Stress CPU terminé')
+    
+    class StressHandler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == '/stress':
+                # Répondre immédiatement
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'Starting stress test for 60 seconds...')
+                
+                # Lancer le stress CPU dans un thread séparé
+                thread = threading.Thread(target=stress_cpu)
+                thread.daemon = True
+                thread.start()
+            else:
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'Hello! Use /stress to start a 1-minute CPU stress test')
+    
+    port = 8080
+    httpd = socketserver.TCPServer(('', port), StressHandler)
+    print('Serveur démarré sur le port', port)
+    httpd.serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: http-stress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: http-stress
+  template:
+    metadata:
+      labels:
+        app: http-stress
+    spec:
+      containers:
+      - name: http-stress
+        image: python:3.9-slim
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 300m
+            memory: 256Mi
+        ports:
+        - containerPort: 8080
+        command: ["python", "-u", "/app/server.py"]
+        volumeMounts:
+        - name: script-volume
+          mountPath: /app
+      volumes:
+      - name: script-volume
+        configMap:
+          name: stress-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: http-stress
+spec:
+  selector:
+    app: http-stress
+  ports:
+  - port: 80
+    targetPort: 8080
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: http-stress-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: http-stress
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70

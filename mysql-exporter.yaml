@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-exporter-secret
+  namespace: monitoring
+type: Opaque
+stringData:
+  .my.cnf: |
+    [client]
+    user=user
+    password=password
+    host=mysql.database.svc.cluster.local
+    port=3306
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-exporter
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-exporter
+  template:
+    metadata:
+      labels:
+        app: mysql-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9104"
+    spec:
+      containers:
+      - name: mysql-exporter
+        image: prom/mysqld-exporter:v0.15.0
+        ports:
+        - containerPort: 9104
+          name: metrics
+        args:
+        - --config.my-cnf=/etc/mysql/.my.cnf
+        - --collect.info_schema.tables
+        - --collect.info_schema.innodb_metrics
+        - --collect.global_status
+        - --collect.global_variables
+        - --collect.slave_status
+        - --collect.info_schema.processlist
+        volumeMounts:
+        - name: mysql-config
+          mountPath: /etc/mysql
+      volumes:
+      - name: mysql-config
+        secret:
+          secretName: mysql-exporter-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-exporter
+  namespace: monitoring
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9104"
+spec:
+  selector:
+    app: mysql-exporter
+  ports:
+  - name: metrics
+    port: 9104
+    targetPort: 9104
